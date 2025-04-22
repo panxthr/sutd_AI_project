@@ -1,33 +1,29 @@
 from flask import Flask, request, jsonify
-from models.lstm import LSTMModel
-from models.gru import GRUModel
-from models.nn import NNModel
+from data.infer import get_prediction
+from flask_cors import CORS
 
 app = Flask(__name__)
-
-# Initialize models
-lstm_model = LSTMModel()
-gru_model = GRUModel()
-nn_model = NNModel()
+CORS(app)
 
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.json
-    model_type = data.get('model_type')
-    input_data = data.get('input_data')
 
-    if not model_type or not input_data:
-        return jsonify({'error': 'model_type and input_data are required'}), 400
+    required_fields = ['addr_lat', 'addr_long', 'flat_type', 'area_sqft', 'month', 'year']
+    missing_fields = [field for field in required_fields if field not in data]
+
+    if missing_fields:
+        return jsonify({'error': f'Missing fields: {", ".join(missing_fields)}'}), 400
 
     try:
-        if model_type == 'LSTM':
-            prediction = lstm_model.predict(input_data)
-        elif model_type == 'GRU':
-            prediction = gru_model.predict(input_data)
-        elif model_type == 'NN':
-            prediction = nn_model.predict(input_data)
-        else:
-            return jsonify({'error': 'Invalid model_type'}), 400
+        addr_lat = float(data['addr_lat'])
+        addr_long = float(data['addr_long'])
+        flat_type = str(data['flat_type'])
+        area_sqft = float(data['area_sqft'])
+        month = int(data['month'])
+        year = int(data['year'])
+
+        prediction = get_prediction(addr_lat, addr_long, flat_type, area_sqft, month, year)
 
         return jsonify({'prediction': prediction})
     except Exception as e:

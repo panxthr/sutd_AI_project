@@ -31,6 +31,19 @@ interface Station {
   distance?: number;
 }
 
+interface PredictionRequest {
+  addr_lat: number;
+  addr_long: number;
+  flat_type: string;
+  area_sqft: number;
+  month: number;
+  year: number;
+}
+
+interface PredictionResponse {
+  prediction: number;
+}
+
 const loadScript = (src: string): Promise<void> =>
   new Promise((resolve, reject) => {
     const script = document.createElement("script");
@@ -288,14 +301,13 @@ const stationData: Station[] = [
   { station_name: "Soo Teck", type: "LRT", lat: 1.405436, lng: 103.897287 },
 ];
 
-// Function to calculate distance between two points using Haversine formula
 const calculateDistance = (
   lat1: number,
   lng1: number,
   lat2: number,
   lng2: number
 ): number => {
-  const R = 6371; // Radius of the earth in km
+  const R = 6371;
   const dLat = deg2rad(lat2 - lat1);
   const dLon = deg2rad(lng2 - lng1);
   const a =
@@ -321,9 +333,8 @@ const App: React.FC = () => {
   // State variables
   const [address, setAddress] = useState<string | null>(null);
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
-  const [rooms, setRooms] = useState<number>(1);
-  const [squareFeet, setSquareFeet] = useState<number>(500);
-  const [selectedModel, setSelectedModel] = useState<string>("linear");
+  const [flatType, setFlatType] = useState<string>("3-ROOM");
+  const [areaSqft, setAreaSqft] = useState<number>(990);
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().slice(0, 7)
   );
@@ -331,10 +342,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showResults, setShowResults] = useState<boolean>(false);
   const [nearestStation, setNearestStation] = useState<Station | null>(null);
-
-  useEffect(() => {
-    console.log("Addresss:", address);
-  }, [address]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const initializeMap = async (): Promise<void> => {
@@ -342,6 +350,8 @@ const App: React.FC = () => {
 
       try {
         // Load necessary scripts
+
+        setEstimatedRent(null);
         await loadScript("https://code.jquery.com/jquery-3.7.0.min.js");
         await loadScript(
           "https://www.onemap.gov.sg/web-assets/libs/leaflet/onemap-leaflet.js"
@@ -377,13 +387,11 @@ const App: React.FC = () => {
             <a href="https://www.sla.gov.sg/" target="_blank" rel="noopener noreferrer">Singapore Land Authority</a>
           `);
 
-            // Map click listener
             map.on("click", async (e: any) => {
               const { lat, lng } = e.latlng;
               console.log("Point clicked:", lat, lng);
               setCoordinates({ lat, lng });
 
-              // Place or move marker
               if (markerRef.current) {
                 markerRef.current.setLatLng([lat, lng]);
               } else {
@@ -391,7 +399,6 @@ const App: React.FC = () => {
                   draggable: true,
                 }).addTo(map);
 
-                // Add drag end event to update coordinates when marker is dragged
                 markerRef.current.on("dragend", function (event: any) {
                   const marker = event.target;
                   const position = marker.getLatLng();
@@ -408,6 +415,7 @@ const App: React.FC = () => {
         );
       } catch (err) {
         console.error("Error initializing map:", err);
+        setError("Failed to initialize map. Please refresh the page.");
       }
     };
 
@@ -415,7 +423,6 @@ const App: React.FC = () => {
   }, []);
 
   const findNearestStation = (lat: number, lng: number): void => {
-    // Calculate distance to each station
     const stationsWithDistance = stationData.map((station) => {
       const distance = calculateDistance(lat, lng, station.lat, station.lng);
       return { ...station, distance };
@@ -433,18 +440,14 @@ const App: React.FC = () => {
     lat: number,
     lng: number
   ): { X: number; Y: number } => {
-    // This is a very simplified conversion for demonstration
-    // In production, you should use the actual SVY21 conversion formula or OneMap's conversion API
-    // These constants are approximations for Singapore
-    const a = 6378137.0; // WGS84 semi-major axis
-    const f = 1.0 / 298.257223563; // WGS84 flattening
-    const oLat = 1.366666; // SVY21 origin latitude
-    const oLon = 103.833333; // SVY21 origin longitude
-    const No = 38744.572; // False Northing
-    const Eo = 28001.642; // False Easting
-    const k = 1.0; // Scale factor
+    const a = 6378137.0;
+    const f = 1.0 / 298.257223563;
+    const oLat = 1.366666;
+    const oLon = 103.833333;
+    const No = 38744.572;
+    const Eo = 28001.642;
+    const k = 1.0;
 
-    // Very simplified conversion (this is not accurate for production)
     const x = (lng - oLon) * 111320 * Math.cos((lat * Math.PI) / 180) * k + Eo;
     const y = (lat - oLat) * 110574 * k + No;
 
@@ -452,9 +455,12 @@ const App: React.FC = () => {
   };
 
   const fetchAddress = (lat: number, lng: number): void => {
+    setShowResults(false);
     console.log("Fetching address for coordinates:", lat, lng);
     const svy21Coords = convertToSVY21(lat, lng);
     // New token and endpoint
+
+    // Token will expire soon, and to be replaced with your own personal token
     const token =
       "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI4M2Y2OTc2MGY1ZGE0YTJiMDM4MGY0MjYzOTY1OGMxMyIsImlzcyI6Imh0dHA6Ly9pbnRlcm5hbC1hbGItb20tcHJkZXppdC1pdC1uZXctMTYzMzc5OTU0Mi5hcC1zb3V0aGVhc3QtMS5lbGIuYW1hem9uYXdzLmNvbS9hcGkvdjIvdXNlci9wYXNzd29yZCIsImlhdCI6MTc0NTIxNDMwNCwiZXhwIjoxNzQ1NDczNTA0LCJuYmYiOjE3NDUyMTQzMDQsImp0aSI6IjJ2WDREeml0dk4yVGNiN3AiLCJ1c2VyX2lkIjo2OTI5LCJmb3JldmVyIjpmYWxzZX0.wfktWONDkXXST3o3YmM0zZDVcC3onpdwbXlqkVDOdTw";
 
@@ -477,9 +483,7 @@ const App: React.FC = () => {
         if (data.GeocodeInfo && data.GeocodeInfo.length > 0) {
           console.log(data);
           const address =
-            data.GeocodeInfo[0].BUILDINGNAME +
-            " BLOCK " +
-            data.GeocodeInfo[0].BLOCK;
+            data.GeocodeInfo[0].ROAD + " BLOCK " + data.GeocodeInfo[0].BLOCK;
           setAddress(address);
           console.log(address);
         } else {
@@ -493,67 +497,56 @@ const App: React.FC = () => {
       });
   };
 
-  const getQuote = (): void => {
+  const getPrediction = async (): Promise<void> => {
     if (!coordinates) {
       alert("Please select a location on the map first");
       return;
     }
 
     setIsLoading(true);
+    setError(null);
 
-    // Simulate API call to prediction model
-    setTimeout(() => {
-      // Generate a realistic rental price based on inputs
-      const basePrice = 1500;
-      const roomMultiplier = rooms * 500;
-      const sizeMultiplier = squareFeet * 0.5;
+    // Extract month and year from selected date
+    const dateObj = new Date(selectedDate + "-01");
+    const month = dateObj.getMonth() + 1; // JavaScript months are 0-indexed
+    const year = dateObj.getFullYear();
 
-      // Different models would give slightly different results
-      let modelAdjustment = 1.0;
-      if (selectedModel === "xgboost") modelAdjustment = 1.05;
-      if (selectedModel === "neural") modelAdjustment = 0.95;
+    // Create request payload
+    const requestData: PredictionRequest = {
+      addr_lat: coordinates.lat,
+      addr_long: coordinates.lng,
+      flat_type: flatType,
+      area_sqft: areaSqft,
+      month: month,
+      year: year,
+    };
 
-      // Location factor (using coordinates)
-      const locationFactor = ((coordinates.lat * 1000) % 0.3) + 0.85;
+    try {
+      const response = await fetch("http://127.0.0.1:5000/predict", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestData),
+      });
 
-      // Time factor (more recent = higher rent)
-      const dateObj = new Date(selectedDate + "-01");
-      const currentDate = new Date();
-      const monthsDiff =
-        (dateObj.getFullYear() - currentDate.getFullYear()) * 12 +
-        dateObj.getMonth() -
-        currentDate.getMonth();
-      const timeFactor = 1 + monthsDiff * 0.01; // 1% increase per month into the future
-
-      // MRT proximity factor
-      let mrtFactor = 1.0;
-      if (nearestStation && nearestStation.distance) {
-        // Higher rent for properties closer to MRT/LRT stations
-        if (nearestStation.distance < 0.5) {
-          mrtFactor = 1.15; // 15% premium for very close proximity (<500m)
-        } else if (nearestStation.distance < 1) {
-          mrtFactor = 1.1; // 10% premium for close proximity (<1km)
-        } else if (nearestStation.distance < 2) {
-          mrtFactor = 1.05; // 5% premium for moderate proximity (<2km)
-        }
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
       }
 
-      const calculatedRent = Math.round(
-        (basePrice + roomMultiplier + sizeMultiplier) *
-          modelAdjustment *
-          locationFactor *
-          timeFactor *
-          mrtFactor
-      );
-
-      setEstimatedRent(calculatedRent);
-      setIsLoading(false);
+      const data: PredictionResponse = await response.json();
+      setEstimatedRent(data.prediction);
       setShowResults(true);
-    }, 1500);
+    } catch (error) {
+      console.error("Error getting prediction:", error);
+      setError("Failed to get rental prediction. Please try again later.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 opacity">
+    <div className="flex flex-col min-h-screen bg-gray-50">
       <header className="bg-blue-600 text-white p-4 shadow-md">
         <h1 className="text-2xl font-bold">Singapore Rental Price Predictor</h1>
         <p className="text-sm">
@@ -584,6 +577,12 @@ const App: React.FC = () => {
               Property Details
             </h2>
 
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-red-600">{error}</p>
+              </div>
+            )}
+
             {address && (
               <div className="mb-4">
                 <label className="block text-gray-700 text-sm font-bold mb-2">
@@ -603,36 +602,33 @@ const App: React.FC = () => {
 
             <div className="mb-4">
               <label className="block text-gray-700 text-sm font-bold mb-2">
-                Number of Rooms
+                Flat Type
               </label>
-              <div className="flex space-x-2">
-                {[1, 2, 3, 4, 5].map((num) => (
-                  <button
-                    key={num}
-                    className={`w-10 h-10 rounded-full ${
-                      rooms === num
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-200 text-gray-700"
-                    } flex items-center justify-center font-bold`}
-                    onClick={() => setRooms(num)}
-                  >
-                    {num}
-                  </button>
-                ))}
-              </div>
+              <select
+                value={flatType}
+                onChange={(e) => setFlatType(e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="1-ROOM">1-ROOM</option>
+                <option value="2-ROOM">2-ROOM</option>
+                <option value="3-ROOM">3-ROOM</option>
+                <option value="4-ROOM">4-ROOM</option>
+                <option value="5-ROOM">5-ROOM</option>
+                <option value="EXECUTIVE">EXECUTIVE</option>
+              </select>
             </div>
 
             <div className="mb-4">
               <label className="block text-gray-700 text-sm font-bold mb-2">
-                Square Feet: {squareFeet}
+                Area (Square Feet): {areaSqft}
               </label>
               <input
                 type="range"
                 min="300"
                 max="3000"
                 step="50"
-                value={squareFeet}
-                onChange={(e) => setSquareFeet(parseInt(e.target.value))}
+                value={areaSqft}
+                onChange={(e) => setAreaSqft(parseInt(e.target.value))}
                 className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               />
               <div className="flex justify-between text-xs text-gray-500 mt-1">
@@ -643,22 +639,7 @@ const App: React.FC = () => {
 
             <div className="mb-4">
               <label className="block text-gray-700 text-sm font-bold mb-2">
-                Prediction Model
-              </label>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="linear">Linear Regression</option>
-                <option value="xgboost">XGBoost</option>
-                <option value="neural">Neural Network</option>
-              </select>
-            </div>
-
-            <div className="mb-6">
-              <label className="block text-gray-700 text-sm font-bold mb-2">
-                Prediction Month
+                Prediction Month and Year
               </label>
               <input
                 type="month"
@@ -669,8 +650,15 @@ const App: React.FC = () => {
               />
             </div>
 
+            <div className="mb-6 p-3 bg-blue-50 border border-blue-200 rounded-md">
+              <p className="text-blue-800 text-sm">
+                Our rental predictions are generated using an ensemble machine
+                learning model trained on historical Singapore rental data.
+              </p>
+            </div>
+
             <button
-              onClick={getQuote}
+              onClick={getPrediction}
               disabled={!coordinates || isLoading}
               className={`w-full py-3 px-4 font-bold rounded-lg ${
                 !coordinates || isLoading
@@ -690,35 +678,25 @@ const App: React.FC = () => {
           </div>
 
           {/* Results section */}
-          {showResults && estimatedRent && (
+          {showResults && estimatedRent !== null && (
             <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
               <h3 className="text-lg font-bold text-green-800">
                 Estimated Monthly Rent
               </h3>
               <div className="text-3xl font-bold text-green-700 my-2">
-                SGD ${estimatedRent.toLocaleString()}
+                SGD ${estimatedRent.toFixed(2)}
               </div>
-              <div className="text-xl text-green-700 mt-6 ">
-                <p className="mb-1 tracking-wide">Based on your selections:</p>
-                <ul className="list-disc pl-5 text-xl tracking-wide	">
-                  <li>
-                    {rooms} room{rooms > 1 ? "s" : ""}
-                  </li>
-                  <li>{squareFeet} square feet</li>
+              <div className="text-sm text-green-700 mt-6">
+                <p className="mb-1">Based on your selections:</p>
+                <ul className="list-disc pl-5">
+                  <li>Flat Type: {flatType}</li>
+                  <li>{areaSqft} square feet</li>
                   {nearestStation && (
                     <li>
                       {nearestStation.distance?.toFixed(2)} km to{" "}
                       {nearestStation.station_name} {nearestStation.type}
                     </li>
                   )}
-                  <li>
-                    Model:{" "}
-                    {selectedModel === "linear"
-                      ? "Linear Regression"
-                      : selectedModel === "xgboost"
-                      ? "XGBoost"
-                      : "Neural Network"}
-                  </li>
                   <li>
                     Prediction for:{" "}
                     {new Date(selectedDate + "-01").toLocaleDateString(
